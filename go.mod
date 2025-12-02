@@ -1,4 +1,4 @@
-module erpcompany.kz/sanctions-list-server
+module gotoss08/kz-sanctions-list-updater
 
 go 1.25.4
 
