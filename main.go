@@ -27,7 +27,48 @@ func setup_logger() {
 
 }
 
+func connect_to_ftp(host string, user string, pass string) *ftp.ServerConn {
+
+	conn, err := ftp.Dial(host, ftp.DialWithTimeout(5*time.Second))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = conn.Login(user, pass)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Connected to ftp: %s\n", host)
+
+	return conn
+
+}
+
+func store_in_memory_data_on_ftp(conn *ftp.ServerConn, file_name string, data []byte) {
+
+	log.Printf("Storing data (%d bytes) on ftp: %s\n", len(data), file_name)
+
+	err := conn.Stor(file_name, bytes.NewReader(data))
+	if err != nil {
+		log.Panicf("Error storing file \"%s\" to ftp: %s", file_name, err)
+	}
+
+}
+
+func disconnect_from_ftp(conn *ftp.ServerConn) {
+
+	if err := conn.Quit(); err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println("Disconnected from ftp")
+
+}
+
 func fetch_sanction_terrorist_list(token string, status string) []byte {
+
+	log.Printf("Fetching sanctions list: %s\n", status)
 
 	base_url := "https://api.websfm.kz/v1/sanctions/sanction-terrorist"
 
@@ -40,9 +81,7 @@ func fetch_sanction_terrorist_list(token string, status string) []byte {
 	params.Add("limit", "999999999")
 
 	full_url := base_url + "?" + params.Encode()
-
-	log.Printf("TOKEN: %s", token)
-	log.Printf("GET %s", full_url)
+	log.Printf("GET - %s\n", full_url)
 
 	// Create a new HTTP GET request
 	req, err := http.NewRequest(http.MethodGet, full_url, nil)
@@ -71,33 +110,11 @@ func fetch_sanction_terrorist_list(token string, status string) []byte {
 
 }
 
-func connect_to_ftp(host string, user string, pass string) *ftp.ServerConn {
-
-	conn, err := ftp.Dial(host, ftp.DialWithTimeout(5*time.Second))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = conn.Login(user, pass)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return conn
-
-}
-
-func disconnect_from_ftp(conn *ftp.ServerConn) {
-
-	if err := conn.Quit(); err != nil {
-		log.Fatal(err)
-	}
-
-}
-
 func main() {
 
 	setup_logger()
+
+	log.Println("Updating sanctions lists...")
 
 	token := os.Getenv("API_WEBSFM_KZ_TOKEN")
 
@@ -105,7 +122,7 @@ func main() {
 	ftp_user := os.Getenv("FTP_USER")
 	ftp_pass := os.Getenv("FTP_PASS")
 
-	statuses := []string{"acting"}
+	statuses := []string{"acting", "included", "excluded"}
 
 	ftp_conn := connect_to_ftp(ftp_host, ftp_user, ftp_pass)
 	defer disconnect_from_ftp(ftp_conn)
@@ -113,12 +130,10 @@ func main() {
 	for _, status := range statuses {
 
 		body := fetch_sanction_terrorist_list(token, status)
-		ftp_file_name := fmt.Sprintf("test-%s.json", status)
-
-		err := ftp_conn.Stor(ftp_file_name, bytes.NewReader(body))
-		if err != nil {
-			log.Printf("Error storing file \"%s\" to ftp: %s", ftp_file_name, err)
-		}
+		ftp_file_name := fmt.Sprintf("%s.json", status)
+		store_in_memory_data_on_ftp(ftp_conn, ftp_file_name, body)
 
 	}
+
+	log.Println("Sanctions lists sucessfully updated")
 }
